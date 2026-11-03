@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: farmiq
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: farmiq-api
+  namespace: farmiq
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: farmiq-api }
+  template:
+    metadata:
+      labels: { app: farmiq-api }
+    spec:
+      containers:
+        - name: api
+          image: YOUR_REGISTRY/farmiq-api:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - secretRef: { name: farmiq-secrets }
+            - configMapRef: { name: farmiq-config }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: farmiq-api
+  namespace: farmiq
+spec:
+  selector: { app: farmiq-api }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: farmiq-web
+  namespace: farmiq
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: farmiq-web }
+  template:
+    metadata:
+      labels: { app: farmiq-web }
+    spec:
+      containers:
+        - name: web
+          image: YOUR_REGISTRY/farmiq-web:latest
+          ports: [{ containerPort: 3000 }]
+          env:
+            - name: API_INTERNAL_URL
+              value: http://farmiq-api:8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: farmiq-web
+  namespace: farmiq
+spec:
+  selector: { app: farmiq-web }
+  ports: [{ port: 80, targetPort: 3000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: farmiq-worker
+  namespace: farmiq
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: farmiq-worker }
+  template:
+    metadata:
+      labels: { app: farmiq-worker }
+    spec:
+      containers:
+        - name: worker
+          image: YOUR_REGISTRY/farmiq-api:latest
+          command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO"]
+          envFrom:
+            - secretRef: { name: farmiq-secrets }
+            - configMapRef: { name: farmiq-config }
